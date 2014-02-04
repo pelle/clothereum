@@ -2,11 +2,15 @@
 (ns clothereum.rlp
   (:use gloss.core
         gloss.io
-        gloss.data.primitives)
+        gloss.data.primitives
+        clojure.math.numeric-tower)
   (:require [gloss.core.protocols :as proto]
             [gloss.data.bytes :as bytes])
   (:import [gloss.core.protocols Reader Writer]))
 
+
+
+(def LARGEINT (expt 2 256))
 
 (defn unsigned-byte
   "Stupid ass hack to read the value of an unsigned byte"
@@ -42,13 +46,8 @@
 (defn s->bs [s]
   (gloss.io/to-buf-seq (.getBytes s "ISO-8859-1")))
 
-(let [b (s->bs "1")]
-;  (.get (first b))
-  (gloss.data.bytes/take-contiguous-bytes b 1)
-  )
-
 (defn bs->s [bs]
-  (String. (.array (contiguous bs))))
+  (String. (.array (contiguous bs)) "ISO-8859-1"))
 
 (def rlp
   (reify
@@ -105,7 +104,48 @@
       Writer
       (sizeof [_] nil)
       (write-bytes [_ buf val]
-                   [])))
+
+                 (cond
+                     (number? val)
+                     (if (< val 24)
+                       (proto/with-buffer [buf 1]
+                                          (proto/write-bytes (primitive-codecs :ubyte) buf val))
+                       (let [bi (biginteger val)
+                             data (.toByteArray bi )]
+                         (if (< bi LARGEINT)
+                           (proto/with-buffer [buf (inc (count data))]
+                                              (.put buf (byte (+ 23 (count data))))
+                                              (.put buf data))
+                           (let [size-bytes (.toByteArray (biginteger (count data)))]
+                             (proto/with-buffer [buf (+ 1 (count size-bytes) (count data))]
+                                              (.put buf (byte (+ 55 (count size-bytes))))
+                                              (.put buf size-bytes)
+                                              (.put buf data))))))
+
+                    (string? val)
+                      (let [size (count val)
+                            tiny (< size 56)]
+                        (proto/with-buffer [buf (if tiny (inc size) (+ 2 size))]
+                                           (if tiny
+                                             (proto/write-bytes (primitive-codecs :ubyte) buf (+ size 64))
+                                             (do
+                                               (proto/write-bytes (primitive-codecs :ubyte) buf 120) ; TODO handle cases where size greater than a byte
+                                               (proto/write-bytes (primitive-codecs :ubyte) buf size)))
+                                           (.put buf (.getBytes val "ISO-8859-1"))))
+
+                        (sequential? val)
+                        (let [size (count val)]
+                          (concat
+                           (if (< size 56)
+                             (proto/write-bytes (primitive-codecs :ubyte) buf (+ 128 size))
+                             (concat
+                               ;; TODO This only handles cases where number is < 256 bytes
+                               (proto/write-bytes (primitive-codecs :ubyte) buf (+ 128 1))
+                               (proto/write-bytes (primitive-codecs :ubyte) buf size)
+                               ))
+                           (apply concat
+                            (for [c val]
+                              (proto/write-bytes rlp buf c)))))))))
 
 (defn decode-rlp [s]
   (decode rlp (s->bs s)))

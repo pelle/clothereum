@@ -25,16 +25,14 @@
 (deftest decoding
   (doall
     (for [[e d] test-pairs]
-      (do
-        (testing (str "decoding " " -> " (prn-str e))
-          (is (= e (decode-rlp d))))))))
+      (testing (str "decoding " (prn-str e))
+        (is (= e (decode-rlp d)))))))
 
 (deftest encoding
-  (testing "Test data"
-    (if false
-      (for [[e d] test-pairs]
+  (doall
+    (for [[e d] test-pairs]
+      (testing (str "failure encoding " (prn-str e))
         (is (= d (encode-rlp e)))))))
 
 
-
-;(bs->s (s->bs (test-pairs "dog")))
+;(map #(format "%x" %) (.getBytes (encode-rlp 0x20100102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F)))
