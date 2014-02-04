@@ -7,12 +7,12 @@ Still very early work in progress
 Done:
 
 - RLP Decoding
+- RLP Encoding
 
 TODO:
 
-- RLP Encoding
-- Network interface
 - Message parsing
+- Network interface
 - Execute contract code
 - Write contract code in Clojure/Lisp or something
 
