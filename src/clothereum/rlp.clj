@@ -25,8 +25,7 @@
 
 (defn c->s [c] (java.lang.String. (c->b c)))
 
-(declare rlp)
-(declare read-rlp)
+;(declare rlp)
 
 (defn hex [x]
   (format "%x" x))
@@ -40,15 +39,25 @@
     (.get (.first b) ba)
     (BigInteger. ba)))
 
+(defn s->bs [s]
+  (gloss.io/to-buf-seq (.getBytes s "ISO-8859-1")))
+
+(let [b (s->bs "1")]
+;  (.get (first b))
+  (gloss.data.bytes/take-contiguous-bytes b 1)
+  )
+
+(defn bs->s [bs]
+  (String. (.array (contiguous bs))))
+
 (def rlp
   (reify
      Reader
      (read-bytes [_ b]
-       (let [;b  (contiguous b)
-             h (decode (primitive-codecs :ubyte) b false)
+       (let [h (decode (primitive-codecs :ubyte) b false)
              b (gloss.data.bytes/drop-bytes b 1)]
-;         (println "h = " (format "%x" h))
          (cond
+            ;; Numbers
            (< h 24)
              [true h b]
            (< h 56)
@@ -57,28 +66,29 @@
                  [false rlp b]
                  [true (read-big-integer b l) (gloss.data.bytes/drop-bytes b l)]))
            (< h 64)
-             (let [l (- h 55)]
-               (if (< (byte-count b) l)
+             (let [ll (- h 55)]
+               (if (< (byte-count b) ll)
                  [false rlp b]
-                 (let [l (read-big-integer b l)]
+                 (let [l (read-big-integer b ll)]
                    (if (< (byte-count b) l)
                      [false rlp b]
-                     [true (read-big-integer b l) b]))))
-
+                     [true (read-big-integer b l) (gloss.data.bytes/drop-bytes b (+ l ll))]))))
+            ;; Strings
            (= h 64)
              [true "" b]
 
            (< h 120)
              (let [l (- h 64)]
-                (proto/read-bytes (string :ascii :length l) b))
+                (proto/read-bytes (string :ISO-8859-1 :length l) b))
 
            (< h 128)
              (let [l (- h 119)]
                (if (< (byte-count b) l)
                  [false rlp b]
                  (let [l (read-big-integer b l)]
-                   (proto/read-bytes (string :ascii :length (inc l)) b))))
+                   (proto/read-bytes (string :ISO-8859-1 :length (inc l)) b))))
 
+           ;; Arrays
            (= h 128)
               [true [] b]
 
@@ -97,7 +107,9 @@
       (write-bytes [_ buf val]
                    [])))
 
-(defn read-rlp [b]
-  (proto/read-bytes rlp b))
+(defn decode-rlp [s]
+  (decode rlp (s->bs s)))
 
+(defn encode-rlp [d]
+  (bs->s (encode rlp d)))
 
