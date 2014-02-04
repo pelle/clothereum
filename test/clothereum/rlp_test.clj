@@ -5,38 +5,28 @@
             [clothereum.rlp :refer :all]))
 
 (def test-pairs
-  { "dog" "\u0043dog"
-   ["cat" "dog"] "\u0082\0043cat\0043dog"
-   "" "\u0040"
-   [] "\u0080"
+  {
    15 "\u000f"
-   1024 "\u0042\u0004\u0000"
+   69 "\u0018\u0045"
+   257 "\u0019\u0001\u0001"
+   0x20100102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F "\u0038\u0021\u0020\u0010\u0001\u0002\u0003\u0004\u0005\u0006\u0007\u0008\u0009\u000a\u000b\u000c\u000d\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017\u0018\u0019\u001a\u001b\u001c\u001d\u001e\u001f"
+
+   "" "\u0040"
+   "dog" "\u0043dog"
+   "Lorem ipsum dolor sit amet, consectetur adipisicing elit" "\u0078\u0038Lorem ipsum dolor sit amet, consectetur adipisicing elit"
+
+   [] "\u0080"
+   [15 "dog"] "\u0082\u000f\u0043dog"
+   ["cat" "dog"] "\u0082\u0043cat\u0043dog"
    [ [] [[]] [ [] [[]] ] ] "\u0083\u0080\u0081\u0080\u0082\u0080\u0081\u0080"}
   )
-
-;(.get (first (create-buf-seq (gloss.io/to-byte-buffer "\u0080"))) 1 )
-
-;(encode rlp [])
 
 (deftest decoding
   (doall
     (for [[e d] test-pairs]
       (do
-        (println (str "TESTING: " (prn-str e)))
         (testing (prn-str e)
-          (is (= e (decode rlp (create-buf-seq (gloss.io/to-byte-buffer (.getBytes d "ISO-8859-1")))))))))))
-
-(defn decode-string [b]
-  (try
-    (decode rlp (create-buf-seq (gloss.io/to-byte-buffer (.getBytes b "ISO-8859-1"))))
-    (catch Exception e nil)))
-
-(decode-string "\u0080")
-
-;(.get (gloss.io/to-byte-buffer (.getBytes "\u0080" "ISO-8859-1")) 1)
-(= (hex 0x80) (hex (unchecked-byte (.get (.duplicate (first (create-buf-seq (gloss.io/to-byte-buffer (.getBytes "\u0080" "ISO-8859-1")))))))))
-(unchecked-byte 0x80)
-(map #(decode-string (last %)) test-pairs)
+          (is (= e (decode rlp (create-buf-seq (gloss.io/to-byte-buffer (.getBytes d "ISO-8859-1"))) false))))))))
 
 (deftest encoding
   (testing "Test data"

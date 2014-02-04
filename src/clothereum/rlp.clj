@@ -25,47 +25,73 @@
 
 (defn c->s [c] (java.lang.String. (c->b c)))
 
+(declare rlp)
 (declare read-rlp)
 
 (defn hex [x]
   (format "%x" x))
 
+(defn fixed-length-codec
+  [codec n]
+  (compile-frame (vec (take n (repeat codec)))))
+
+(defn read-big-integer [b l]
+  (let [ba (byte-array l)]
+    (.get (.first b) ba)
+    (BigInteger. ba)))
+
 (def rlp
   (reify
      Reader
      (read-bytes [_ b]
-       (let [h (unsigned-byte (.get (.duplicate (first b))))]
-         (println "h = " (format "%x" h))
+       (let [;b  (contiguous b)
+             h (decode (primitive-codecs :ubyte) b false)
+             b (gloss.data.bytes/drop-bytes b 1)]
+;         (println "h = " (format "%x" h))
          (cond
-           (and ;(>= 0 h)
-               (< h (unsigned-byte 0x40)))
-             (proto/read-bytes (primitive-codecs :byte) b)
-           (= h (unsigned-byte 0x40))
-             [true "" (gloss.data.bytes/drop-bytes b 1)]
-           (< h (unsigned-byte 0x77))
-             (let [l (unsigned-byte (- h (unsigned-byte 0x40)))]
-                (proto/read-bytes (string :ascii :length l) (gloss.data.bytes/drop-bytes b 1)))
-           (< h (unsigned-byte 0x80))
-             (let [sl (- h (unsigned-byte 0x77))
-                   _ (println (str "sl = " sl))
-                   l (get 1 (proto/read-bytes (primitive-codecs (condp = sl
-                                                                  1 :byte
-                                                                  2 :uint16-be
-                                                                  4 :uint32-be)) (gloss.data.bytes/drop-bytes b 1)))]
-                (proto/read-bytes (string :ascii :length l) (gloss.data.bytes/drop-bytes b (inc l))))
-           (= (unsigned-byte h) (unsigned-byte 0x80))
-          (do
-            [true [] (gloss.data.bytes/drop-bytes b 1)])
-           (< h (unsigned-byte 0xb7))
-          (let [l (unsigned-byte (- h (unsigned-byte 0x80)))]
-            (proto/read-bytes (compile-frame (vec (take l (repeat :read-rlp)))) b))
-           :else
-          (let [sl (unsigned-byte (- h (unsigned-byte 0x77)))
-                   l (get 1 (proto/read-bytes (primitive-codecs (condp = sl
-                                                                  1 :byte
-                                                                  2 :uint16-be
-                                                                  4 :uint32-be)) (gloss.data.bytes/drop-bytes b 1)))]
-            (proto/read-bytes (compile-frame (vec (take l (repeat :read-rlp)))) (gloss.data.bytes/drop-bytes b (inc l)))))))
+           (< h 24)
+             [true h b]
+           (< h 56)
+             (let [l (- h 23)]
+               (if (< (byte-count b) l)
+                 [false rlp b]
+                 [true (read-big-integer b l) (gloss.data.bytes/drop-bytes b l)]))
+           (< h 64)
+             (let [l (- h 55)]
+               (if (< (byte-count b) l)
+                 [false rlp b]
+                 (let [l (read-big-integer b l)]
+                   (if (< (byte-count b) l)
+                     [false rlp b]
+                     [true (read-big-integer b l) b]))))
+
+           (= h 64)
+             [true "" b]
+
+           (< h 120)
+             (let [l (- h 64)]
+                (proto/read-bytes (string :ascii :length l) b))
+
+           (< h 128)
+             (let [l (- h 119)]
+               (if (< (byte-count b) l)
+                 [false rlp b]
+                 (let [l (read-big-integer b l)]
+                   (proto/read-bytes (string :ascii :length (inc l)) b))))
+
+           (= h 128)
+              [true [] b]
+
+           (< h 184)
+             (let [l (- h 128)]
+                (proto/read-bytes (fixed-length-codec rlp l) b))
+
+           (< h 192)
+             (let [ll (- h 183)]
+               (if (< (byte-count b) ll)
+                 [false rlp b]
+                 (let [l (read-big-integer b ll)]
+                   (proto/read-bytes (fixed-length-codec rlp l) (gloss.data.bytes/drop-bytes b ll))))))))
       Writer
       (sizeof [_] nil)
       (write-bytes [_ buf val]
