@@ -9,9 +9,11 @@ Done:
 - [RLP Decoding](http://wiki.ethereum.org/index.php/RLP)
 - RLP Encoding
 
+Doing:
+- [Message parsing](http://wiki.ethereum.org/index.php/Wire_Protocol)
+
 TODO:
 
-- [Message parsing](http://wiki.ethereum.org/index.php/Wire_Protocol)
 - [Network interface](http://wiki.ethereum.org/index.php/Wire_Protocol)
 - [Patricia Tree Trie storage](http://wiki.ethereum.org/index.php/Patricia_Tree)
 - Execute contract code
