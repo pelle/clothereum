@@ -43,11 +43,18 @@
     (.get (.first b) ba)
     (BigInteger. ba)))
 
+
+(defn bi->bs [s]
+  (gloss.io/to-buf-seq (.toByteArray (biginteger s))))
+
 (defn s->bs [s]
   (gloss.io/to-buf-seq (.getBytes s "ISO-8859-1")))
 
 (defn bs->s [bs]
   (String. (.array (contiguous bs)) "ISO-8859-1"))
+
+(defn bs->bi [bs]
+  (BigInteger. (.array (contiguous bs))))
 
 (def rlp
   (reify
@@ -153,3 +160,5 @@
 (defn encode-rlp [d]
   (bs->s (encode rlp d)))
 
+(defn hexify [s]
+  (map #(format "%x" %) (.getBytes s)))

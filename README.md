@@ -6,13 +6,14 @@ Still very early work in progress
 
 Done:
 
-- RLP Decoding
+- [RLP Decoding](http://wiki.ethereum.org/index.php/RLP)
 - RLP Encoding
 
 TODO:
 
-- Message parsing
-- Network interface
+- [Message parsing](http://wiki.ethereum.org/index.php/Wire_Protocol)
+- [Network interface](http://wiki.ethereum.org/index.php/Wire_Protocol)
+- [Patricia Tree Trie storage](http://wiki.ethereum.org/index.php/Patricia_Tree)
 - Execute contract code
 - Write contract code in Clojure/Lisp or something
 
