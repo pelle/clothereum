@@ -24,11 +24,25 @@
   [codec n]
   (compile-frame (vec (take n (repeat codec)))))
 
-(defn read-big-integer [b l]
+(defn ->ba
+  "If possible converts value to bytearray. If not returns falsy"
+  [v]
+  (cond
+   (string? v)
+   (.getBytes v "ISO-8859-1")
+   (number? v)
+   (.toByteArray (biginteger v))))
+
+(defn read-byte-array [b l]
   (let [ba (byte-array l)]
     (.get (.first b) ba)
-    (BigInteger. ba)))
+    ba))
 
+(defn read-big-integer [b l]
+  (BigInteger. (read-byte-array b l)))
+
+(defn read-string [b l]
+  (String. (read-byte-array b l) "ISO-8859-1"))
 
 (defn bi->bs [s]
   (gloss.io/to-buf-seq (.toByteArray (biginteger s))))
@@ -42,6 +56,7 @@
 (defn bs->bi [bs]
   (BigInteger. (.array (contiguous bs))))
 
+
 (def rlp
   (reify
      Reader
@@ -49,47 +64,32 @@
        (let [h (decode (primitive-codecs :ubyte) b false)
              b (gloss.data.bytes/drop-bytes b 1)]
          (cond
-            ;; Numbers
-           (< h 24)
+            ;; Byte Arrays
+           (< h 0x80)
              [true h b]
-           (< h 56)
-             (let [l (- h 23)]
+           (< h 0xb7)
+             (let [l (- h 0x80)]
                (if (< (byte-count b) l)
                  [false rlp b]
-                 [true (read-big-integer b l) (gloss.data.bytes/drop-bytes b l)]))
-           (< h 64)
-             (let [ll (- h 55)]
+                 [true (read-byte-array b l) (gloss.data.bytes/drop-bytes b l)]))
+           (< h 192)
+             (let [ll (- h 0xb7)]
                (if (< (byte-count b) ll)
                  [false rlp b]
                  (let [l (read-big-integer b ll)]
                    (if (< (byte-count b) l)
                      [false rlp b]
-                     [true (read-big-integer b l) (gloss.data.bytes/drop-bytes b (+ l ll))]))))
-            ;; Strings
-           (= h 64)
-             [true "" b]
-
-           (< h 120)
-             (let [l (- h 64)]
-                (proto/read-bytes (string :ISO-8859-1 :length l) b))
-
-           (< h 128)
-             (let [l (- h 119)]
-               (if (< (byte-count b) l)
-                 [false rlp b]
-                 (let [l (read-big-integer b l)]
-                   (proto/read-bytes (string :ISO-8859-1 :length (inc l)) b))))
-
-           ;; Arrays
-           (= h 128)
+                     [true (read-byte-array b l) (gloss.data.bytes/drop-bytes b (+ l ll))]))))
+           ;; Lists
+           (= h 0xc0)
               [true [] b]
 
-           (< h 184)
-             (let [l (- h 128)]
+           (< h 0xf7)
+             (let [l (- h 0xc0)]
                 (proto/read-bytes (fixed-length-codec rlp l) b))
 
-           (< h 192)
-             (let [ll (- h 183)]
+           :else
+             (let [ll (- h 0xf7)]
                (if (< (byte-count b) ll)
                  [false rlp b]
                  (let [l (read-big-integer b ll)]
@@ -97,48 +97,34 @@
       Writer
       (sizeof [_] nil)
       (write-bytes [_ buf val]
-
-                 (cond
-                     (number? val)
-                     (if (< val 24)
-                       (proto/with-buffer [buf 1]
-                                          (proto/write-bytes (primitive-codecs :ubyte) buf val))
-                       (let [bi (biginteger val)
-                             data (.toByteArray bi )]
-                         (if (< bi LARGEINT)
-                           (proto/with-buffer [buf (inc (count data))]
-                                              (.put buf (byte (+ 23 (count data))))
-                                              (.put buf data))
-                           (let [size-bytes (.toByteArray (biginteger (count data)))]
-                             (proto/with-buffer [buf (+ 1 (count size-bytes) (count data))]
-                                              (.put buf (byte (+ 55 (count size-bytes))))
-                                              (.put buf size-bytes)
-                                              (.put buf data))))))
-
-                    (string? val)
-                      (let [size (count val)
-                            tiny (< size 56)]
-                        (proto/with-buffer [buf (if tiny (inc size) (+ 2 size))]
-                                           (if tiny
-                                             (proto/write-bytes (primitive-codecs :ubyte) buf (+ size 64))
-                                             (do
-                                               (proto/write-bytes (primitive-codecs :ubyte) buf 120) ; TODO handle cases where size greater than a byte
-                                               (proto/write-bytes (primitive-codecs :ubyte) buf size)))
-                                           (.put buf (.getBytes val "ISO-8859-1"))))
-
-                        (sequential? val)
-                        (let [size (count val)]
-                          (concat
-                           (if (< size 56)
-                             (proto/write-bytes (primitive-codecs :ubyte) buf (+ 128 size))
-                             (concat
-                               ;; TODO This only handles cases where number is < 256 bytes
-                               (proto/write-bytes (primitive-codecs :ubyte) buf (+ 128 1))
-                               (proto/write-bytes (primitive-codecs :ubyte) buf size)
-                               ))
-                           (apply concat
-                            (for [c val]
-                              (proto/write-bytes rlp buf c)))))))))
+                   (if-let [ba (->ba val)]
+                      (let [size (count val)]
+                        (if
+                         (and (= size 1)
+                              (< (long (first ba)) 0x80))
+                           (proto/with-buffer [buf 1]
+                             (.put buf ba))
+                         (if (< size 56)
+                           (proto/with-buffer [buf (inc size)]
+                                              (proto/write-bytes (primitive-codecs :ubyte) (+ 0x80 size))
+                                              (.put buf ba))
+                           (let [size-ba (->ba size)]
+                             (proto/with-buffer [buf (+ 1 (count size-ba) size)]
+                                              (proto/write-bytes (primitive-codecs :ubyte) (+ 0xb7 (count size-ba)))
+                                              (.put buf size-ba)
+                                              (.put buf ba))))))
+                     (if (sequential? val)
+                       (let [size (count val)]
+                         (concat
+                          (if (< size 56)
+                            (proto/write-bytes (primitive-codecs :ubyte) buf (+ 0xc0 size))
+                            (let [size-ba (->ba size)]
+                              (proto/with-buffer [buf (inc (count size-ba))]
+                                 (proto/write-bytes (primitive-codecs :ubyte) buf (+ 0xf7 (count size-ba)))
+                                 (.put buf size-ba))))
+                          (apply concat
+                                 (for [c val]
+                                   (proto/write-bytes rlp buf c))))))))))
 
 (defn decode-rlp [s]
   (decode rlp (s->bs s)))
