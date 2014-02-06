@@ -8,21 +8,7 @@
             [gloss.data.bytes :as bytes])
   (:import [gloss.core.protocols Reader Writer]))
 
-
-
 (def LARGEINT (expt 2 256))
-
-(defn unsigned-byte
-  "Stupid ass hack to read the value of an unsigned byte"
-  [b]
-  (let [ba (byte-array 2)]
-    (aset-byte ba 1 (unchecked-byte b))
-    (BigInteger. ba)))
-
-(defn u<
-  "unsigned less than"
-  [b1 b2]
-  (< (unsigned-byte b1) (unsigned-byte b2)))
 
 (defn c->b [c]
   (byte-array [(unchecked-byte c)]))
